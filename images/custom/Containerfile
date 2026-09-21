@@ -142,6 +142,11 @@ RUN --mount=type=secret,id=apps_json,target=/opt/frappe/apps.json,uid=1000,gid=1
     /home/frappe/frappe-bench && \
   cd /home/frappe/frappe-bench && \
   echo "{}" > sites/common_site_config.json && \
+  for app_dir in apps/*/; do \
+    app_name=$(basename "$app_dir"); \
+    branch=$(git -C "$app_dir" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown"); \
+    echo "${app_name}: ${branch}"; \
+  done > BRANCHES.txt && \
   find apps -mindepth 1 -path "*/.git" | xargs rm -fr
 
 FROM base AS backend
