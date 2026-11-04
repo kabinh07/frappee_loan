@@ -1,219 +1,153 @@
-name: frappe_docker
+# Frappe Lending (version-16) + Lending Assistant.
+#
+#   docker compose -f lending-compose.yaml --project-name lending up -d
+#
+# Needs the local image lending-local:v16-ai (build it with ./build-assistant.sh).
+# Open http://localhost:8080 or http://<machine-ip>:8080  (Administrator / admin)
+#
+# Optional settings (shell env or a .env file next to this file):
+#   SITE_NAME, ADMIN_PASSWORD, DB_ROOT_PASSWORD, ANTHROPIC_API_KEY
+#
+# `init` runs once per `up`: writes bench config, creates the site on first run,
+# on later runs installs missing apps and migrates. Every other service waits for it.
+
+name: lending
+
+x-frappe: &frappe
+  image: lending-local:v16-ai
+  pull_policy: never # local-only image, never try to pull it
+  platform: linux/amd64
+  restart: unless-stopped
+  volumes:
+    - sites:/home/frappe/frappe-bench/sites
+  depends_on:
+    init:
+      condition: service_completed_successfully
+
 services:
-  backend:
-    depends_on:
-      configurator:
-        condition: service_completed_successfully
-        required: true
-    environment:
-      GUNICORN_THREADS: "4"
-      GUNICORN_TIMEOUT: "120"
-      GUNICORN_WORKERS: "2"
-    image: lending-local:v16
-    networks:
-      default: null
-    platform: linux/amd64
-    pull_policy: always
-    restart: unless-stopped
-    volumes:
-      - type: volume
-        source: sites
-        target: /home/frappe/frappe-bench/sites
-        volume: {}
-  configurator:
-    command:
-      - |
-        ls -1 apps > sites/apps.txt; bench set-config -g db_host $$DB_HOST; bench set-config -gp db_port $$DB_PORT; bench set-config -g redis_cache "redis://$$REDIS_CACHE"; bench set-config -g redis_queue "redis://$$REDIS_QUEUE"; bench set-config -g redis_socketio "redis://$$REDIS_QUEUE"; bench set-config -gp socketio_port $$SOCKETIO_PORT; bench set-config -g chromium_path /usr/bin/chromium-headless-shell;
-    depends_on:
-      db:
-        condition: service_healthy
-        required: true
-      redis-cache:
-        condition: service_started
-        required: true
-      redis-queue:
-        condition: service_started
-        required: true
-    entrypoint:
-      - bash
-      - -c
-    environment:
-      DB_HOST: db
-      DB_PORT: "3306"
-      REDIS_CACHE: redis-cache:6379
-      REDIS_QUEUE: redis-queue:6379
-      SOCKETIO_PORT: "9000"
-    image: lending-local:v16
-    networks:
-      default: null
-    platform: linux/amd64
-    pull_policy: always
-    restart: on-failure
-    volumes:
-      - type: volume
-        source: sites
-        target: /home/frappe/frappe-bench/sites
-        volume: {}
   db:
+    image: mariadb:11.8
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
       - --skip-character-set-client-handshake
     environment:
       MARIADB_AUTO_UPGRADE: "1"
-      MYSQL_ROOT_PASSWORD: changeit123
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-changeit123}
     healthcheck:
-      test:
-        - CMD
-        - healthcheck.sh
-        - --connect
-        - --innodb_initialized
-      timeout: 5s
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 5s
+      timeout: 5s
       retries: 5
       start_period: 5s
-    image: mariadb:11.8
-    networks:
-      default: null
-    restart: unless-stopped
     volumes:
-      - type: volume
-        source: db-data
-        target: /var/lib/mysql
-        volume: {}
-  frontend:
-    command:
-      - nginx-entrypoint.sh
-    depends_on:
-      backend:
-        condition: service_started
-        required: true
-      websocket:
-        condition: service_started
-        required: true
-    environment:
-      BACKEND: backend:8000
-      CLIENT_MAX_BODY_SIZE: 50m
-      FRAPPE_SITE_NAME_HEADER: $$host
-      PROXY_READ_TIMEOUT: "120"
-      SOCKETIO: websocket:9000
-      UPSTREAM_REAL_IP_ADDRESS: 127.0.0.1
-      UPSTREAM_REAL_IP_HEADER: X-Forwarded-For
-      UPSTREAM_REAL_IP_RECURSIVE: 'off'
-    image: lending-local:v16
-    networks:
-      default: null
-    platform: linux/amd64
-    ports:
-      - mode: ingress
-        target: 8080
-        published: "8080"
-        protocol: tcp
-    pull_policy: always
+      - db-data:/var/lib/mysql
     restart: unless-stopped
-    volumes:
-      - type: volume
-        source: sites
-        target: /home/frappe/frappe-bench/sites
-        volume: {}
-  queue-long:
-    command:
-      - bench
-      - worker
-      - --queue
-      - long,default,short
-    depends_on:
-      configurator:
-        condition: service_completed_successfully
-        required: true
-    image: lending-local:v16
-    networks:
-      default: null
-    platform: linux/amd64
-    pull_policy: always
-    restart: unless-stopped
-    volumes:
-      - type: volume
-        source: sites
-        target: /home/frappe/frappe-bench/sites
-        volume: {}
-  queue-short:
-    command:
-      - bench
-      - worker
-      - --queue
-      - short,default
-    depends_on:
-      configurator:
-        condition: service_completed_successfully
-        required: true
-    image: lending-local:v16
-    networks:
-      default: null
-    platform: linux/amd64
-    pull_policy: always
-    restart: unless-stopped
-    volumes:
-      - type: volume
-        source: sites
-        target: /home/frappe/frappe-bench/sites
-        volume: {}
+
   redis-cache:
     image: redis:8.6-alpine
-    networks:
-      default: null
     restart: unless-stopped
+
   redis-queue:
     image: redis:8.6-alpine
-    networks:
-      default: null
-    restart: unless-stopped
     volumes:
-      - type: volume
-        source: redis-queue-data
-        target: /data
-        volume: {}
-  scheduler:
-    command:
-      - bench
-      - schedule
+      - redis-queue-data:/data
+    restart: unless-stopped
+
+  init:
+    <<: *frappe
+    restart: "no"
     depends_on:
-      configurator:
-        condition: service_completed_successfully
-        required: true
-    image: lending-local:v16
-    networks:
-      default: null
-    platform: linux/amd64
-    pull_policy: always
-    restart: unless-stopped
-    volumes:
-      - type: volume
-        source: sites
-        target: /home/frappe/frappe-bench/sites
-        volume: {}
+      db:
+        condition: service_healthy
+      redis-cache:
+        condition: service_started
+      redis-queue:
+        condition: service_started
+    entrypoint: ["bash", "-c"]
+    command:
+      - |
+        set -e
+        ls -1 apps > sites/apps.txt
+        bench set-config -g db_host db
+        bench set-config -gp db_port 3306
+        bench set-config -g redis_cache redis://redis-cache:6379
+        bench set-config -g redis_queue redis://redis-queue:6379
+        bench set-config -g redis_socketio redis://redis-queue:6379
+        bench set-config -gp socketio_port 9000
+        bench set-config -g chromium_path /usr/bin/chromium-headless-shell
+        if bench --site $$SITE_NAME list-apps >/dev/null 2>&1; then
+          echo "Site $$SITE_NAME exists: install missing apps, migrate"
+          bench --site $$SITE_NAME list-apps | grep -q lending_assistant || bench --site $$SITE_NAME install-app lending_assistant
+          bench --site $$SITE_NAME migrate
+        else
+          echo "Creating site $$SITE_NAME"
+          bench new-site $$SITE_NAME \
+            --mariadb-root-password $$DB_ROOT_PASSWORD \
+            --admin-password $$ADMIN_PASSWORD \
+            --db-root-username root \
+            --install-app erpnext \
+            --install-app payments \
+            --install-app lending \
+            --install-app lending_assistant \
+            --set-default
+          bench --site $$SITE_NAME enable-scheduler
+        fi
+    environment:
+      SITE_NAME: ${SITE_NAME:-lending.localhost}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
+      DB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-changeit123}
+
+  backend:
+    <<: *frappe
+    environment:
+      GUNICORN_WORKERS: "2"
+      GUNICORN_THREADS: "4"
+      GUNICORN_TIMEOUT: "120"
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+
   websocket:
-    command:
-      - node
-      - /home/frappe/frappe-bench/apps/frappe/socketio.js
+    <<: *frappe
+    command: ["node", "/home/frappe/frappe-bench/apps/frappe/socketio.js"]
+
+  queue-short:
+    <<: *frappe
+    command: ["bench", "worker", "--queue", "short,default"]
+
+  # Runs the assistant's Claude calls, so it needs the API key too.
+  queue-long:
+    <<: *frappe
+    command: ["bench", "worker", "--queue", "long,default,short"]
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+
+  scheduler:
+    <<: *frappe
+    command: ["bench", "schedule"]
+
+  frontend:
+    <<: *frappe
+    command: ["nginx-entrypoint.sh"]
     depends_on:
-      configurator:
+      init:
         condition: service_completed_successfully
-        required: true
-    image: lending-local:v16
-    networks:
-      default: null
-    platform: linux/amd64
-    pull_policy: always
-    restart: unless-stopped
-    volumes:
-      - type: volume
-        source: sites
-        target: /home/frappe/frappe-bench/sites
-        volume: {}
-networks:
-  default:
-    name: frappe_docker_default
+      backend:
+        condition: service_started
+      websocket:
+        condition: service_started
+    environment:
+      BACKEND: backend:8000
+      SOCKETIO: websocket:9000
+      # Always serve this site, whatever host/IP the browser used (lets http://<ip>:8080 work).
+      FRAPPE_SITE_NAME_HEADER: ${SITE_NAME:-lending.localhost}
+      CLIENT_MAX_BODY_SIZE: 50m
+      PROXY_READ_TIMEOUT: "120"
+      UPSTREAM_REAL_IP_ADDRESS: 127.0.0.1
+      UPSTREAM_REAL_IP_HEADER: X-Forwarded-For
+      UPSTREAM_REAL_IP_RECURSIVE: "off"
+    ports:
+      - "8080:8080"
+
 volumes:
   db-data:
     name: frappe_docker_db-data
@@ -221,20 +155,7 @@ volumes:
     name: frappe_docker_redis-queue-data
   sites:
     name: frappe_docker_sites
-x-backend-defaults:
-  depends_on:
-    configurator:
-      condition: service_completed_successfully
-  image: lending-local:v16
-  pull_policy: always
-  restart: unless-stopped
-  volumes:
-    - sites:/home/frappe/frappe-bench/sites
-x-customizable-image:
-  image: lending-local:v16
-  pull_policy: always
-  restart: unless-stopped
-x-depends-on-configurator:
-  depends_on:
-    configurator:
-      condition: service_completed_successfully
+
+networks:
+  default:
+    name: frappe_docker_default

@@ -33,6 +33,7 @@ scope to the active sprint when this column is in use.
 
 | # | Task | Goal | Source | Priority | Sprint | Status | Agent | Started | Completed |
 |---|---|---|---|---|---|---|---|---|---|
+| 1 | Lending AI Assistant: Desk side panel (custom app `lending_assistant`, read-only, Claude API). Code written; image build, install and tests NOT yet run (base image `lending-local:v16` missing locally). | — (no goals configured in BUSINESS_GOALS.md; direct user ask) | User 2026-11-04 | 🟡 | — | 🔄 IN_PROGRESS | claude | 2026-11-04 | |
 
 ## Completed Tasks
 

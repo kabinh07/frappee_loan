@@ -1,0 +1,24 @@
+# Layers the lending_assistant custom app onto the already-built lending image.
+# Build context: repo root. Base image comes from run.sh phase 1 (lending-local:v16).
+ARG BASE_IMAGE=lending-local:v16
+FROM ${BASE_IMAGE}
+
+USER frappe
+WORKDIR /home/frappe/frappe-bench
+
+COPY --chown=frappe:frappe custom_apps/lending_assistant apps/lending_assistant
+# Curated, source-verified guides: the assistant's knowledge base (single source of truth).
+COPY --chown=frappe:frappe lending-docs apps/lending_assistant/lending_assistant/knowledge
+
+# The base image keeps built assets in ./assets (moved out of the sites volume).
+# Link them back while building so the new app's bundle lands in the image layer.
+RUN set -e; \
+  if ./env/bin/python -m pip --version >/dev/null 2>&1; then \
+    ./env/bin/python -m pip install --no-cache-dir -e apps/lending_assistant; \
+  else \
+    uv pip install --python ./env/bin/python -e apps/lending_assistant; \
+  fi; \
+  ls -1 apps > sites/apps.txt; \
+  ln -s ../assets sites/assets; \
+  bench build --app lending_assistant; \
+  rm sites/assets

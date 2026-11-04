@@ -33,6 +33,7 @@ disbursed and repaid, so you can see the configuration modules actually working.
 | 10 | [Loan Product](10-loan-product.md) | The template a Loan Application/Loan is created from — interest rate, repayment schedule type, charges, partner shares, per-product offset overrides. Confirmed `maximum_loan_amount` has no enforcement anywhere in this build. | [ ] |
 | 11 | [Sanctioned Loan Amount](11-sanctioned-loan-amount.md) | Per-applicant credit limit — confirmed genuinely user-created (unlike its log-shaped siblings) and actively enforced with a hard `frappe.throw` from both Loan and Loan Application `validate()`. | [ ] |
 | 12 | [First Loan Walkthrough](12-first-loan-walkthrough.md) | Click-by-click runbook: Loan Application → Approve → Loan → Disbursement → Repayment, using the exact records created in modules 01–11. Confirms the real button locations, status transitions, and which fields are pre-filled vs. must be typed by hand. | [ ] |
+| 13 | [AI Assistant](13-ai-assistant.md) | Desk side-panel chat (Claude) that guides a user step by step through this stack. Read-only: reads live schemas, these guides, existing records and (System Manager) the installed lending source; never writes. API key goes in Lending Assistant Settings. | [ ] |
 
 ## Notable findings across modules
 
